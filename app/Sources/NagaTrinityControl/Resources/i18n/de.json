@@ -240,6 +240,7 @@
   },
   "tray": {
     "openWindow": "Fenster öffnen",
+    "closeWindow": "Fenster schließen",
     "reapplyProfile": "Profil neu anwenden",
     "launchAtLogin": "Bei macOS-Login starten",
     "rgbOffOnLock": "RGB beim Sperren ausschalten",

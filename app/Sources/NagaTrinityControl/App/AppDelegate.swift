@@ -121,6 +121,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Command-Q and the Dock’s Quit hide the window. The menu-bar Quit sets
+    /// `isQuitting` first, and that is the only path that actually exits.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if isQuitting {
+            return .terminateNow
+        }
+        hideWindow()
+        return .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         hotkeys.unregisterAll()
         powerMonitor.stop()

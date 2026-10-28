@@ -16,8 +16,9 @@ alwaysApply: false
 
 ## Window / Dock
 
-Closing the window hides it and switches to `.accessory`; it does not quit. "Open window" or a Dock click switches to `.regular`,
-then shows and focuses the window. Only the tray's Quit really quits, and quitting unregisters all hotkeys.
+Closing the window, Command-Q, and the Dock’s Quit hide it and switch to `.accessory`; they do not quit.
+The app menu item is `tray.closeWindow` (⌘Q), not Quit. "Open window" or a Dock click switches to `.regular`,
+then shows and focuses the window. Only the tray's Quit really quits (no ⌘Q), and quitting unregisters all hotkeys.
 
 ## Tray (`NSStatusItem`, 16×16 template image of the upstream diamond icon, tooltip "Naga Trinity Control")
 

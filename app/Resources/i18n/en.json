@@ -216,6 +216,7 @@
   },
   "tray": {
     "openWindow": "Open window",
+    "closeWindow": "Close Window",
     "reapplyProfile": "Re-apply profile",
     "launchAtLogin": "Launch at macOS login",
     "rgbOffOnLock": "Turn RGB off when screen locks",

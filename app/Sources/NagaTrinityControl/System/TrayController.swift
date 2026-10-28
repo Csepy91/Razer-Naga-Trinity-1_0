@@ -80,7 +80,7 @@ final class TrayController: NSObject {
         let quit = NSMenuItem(
             title: l10n.t("tray.quit"),
             action: #selector(quitApp),
-            keyEquivalent: "q"
+            keyEquivalent: ""
         )
         quit.target = self
         menu.addItem(quit)
