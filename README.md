@@ -4,6 +4,8 @@ Native **macOS** controller for the **Razer Naga Trinity** (VID `0x1532`, PID `0
 
 A **1:1 Swift + SwiftUI reimplementation** of the original Electron app — protocol bytes, `profiles.json` schema, UI strings, and verified hardware behavior preserved.
 
+> **AI-developed / AI-ported.** This Swift port was developed and ported with substantial assistance from AI coding tools (Cursor / Composer), directed and reviewed by a human. It is not a hand-written line-by-line rewrite claimed as solely human-authored.
+
 > **Unofficial.** Not affiliated with Razer Inc. Razer® and Naga® are trademarks of Razer Inc.
 
 ---
@@ -18,7 +20,7 @@ This repository is a **native Swift port** of:
 
 Pinned upstream revision: [`28c00cf`](https://github.com/cepheiden/Razer-Naga-Trinity-MACOS/commit/28c00cf)
 
-**All credit for the reverse-engineered Razer protocol, Electron driver (`nagaDriver.ts`), profile store design, macro model, tray/daemon behavior, bilingual UI copy, and the original macOS control experience goes to [cepheiden](https://github.com/cepheiden).**
+**All credit for the reverse-engineered Razer protocol, Electron driver (`nagaDriver.ts`), profile store design, macro model, tray/daemon behavior, bilingual UI copy, and the original macOS control experience goes to [cepheiden](https://github.com/cepheiden).** The original Electron app is human-authored upstream work; this repo is an AI-assisted native reimplementation of that design.
 
 This Swift tree does **not** replace that work — it reimplements it for a native AppKit/SwiftUI binary (no Electron, no Node, no Rust). If you use, fork, or build on this project, **mention and link the original Electron repository** as the source of the protocol and product design.
 
