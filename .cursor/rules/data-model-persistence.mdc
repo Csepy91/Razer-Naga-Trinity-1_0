@@ -1,0 +1,54 @@
+---
+description: Profile data model, profiles.json schema, defaults and migration rules shared by NagaCore and the SwiftUI app
+globs: app/Sources/NagaCore/Models.swift,app/Sources/NagaCore/Store.swift,app/Sources/NagaTrinityControl/State/**
+alwaysApply: false
+---
+
+# Data model and `profiles.json`
+
+The JSON must round-trip with upstream files. Encode/decode with camelCase keys, and kebab/lowercase string enums exactly as below.
+Public Swift types keep the historical `Ffi*` names for UI compatibility.
+
+```
+FfiProfileStore { version: 2, activeProfileId, profiles: [FfiNagaProfile], settings?: FfiAppSettings }
+FfiAppSettings  { rgbOffOnLock: bool (default true), language?: "de"|"en" }
+FfiNagaProfile  { id, name, sidePlate: "two"|"seven"|"twelve", rgb, dpi, pollingRate: 125|500|1000 (number),
+               buttons: [FfiButtonBinding], macros: [FfiMacro], createdAt, updatedAt }   // epoch ms
+FfiRgbSettings  { effect: static|breathing|spectrum|wave|reactive|off, color "#rrggbb", secondaryColor,
+               brightness 0..100, waveDirection: left|right, reactiveSpeed 1..4, syncZones,
+               zones: { logo|scroll|side: { enabled, color } } }
+FfiDpiSettings  { activeStage (1-based), stages: [{ id, x, y }] }   // 1..=5 stages
+FfiButtonBinding{ id: "base-N"|"side-N", label, hardwareIndex, action, value, macroId? }
+  action: default|key|macro|dpi-up|dpi-down|dpi-cycle|profile-cycle|mouse-button|disabled
+FfiMacro        { id, name, steps: [{ id, type: key|text|delay|mouse, value, delayMs }],
+               repeatMode: once|count|while-held|toggle, repeatCount }
+FfiDeviceInfo   { connected, productName?, manufacturer?, vendorId?, productId?, interfaces }
+```
+
+## Location
+
+`~/Library/Application Support/Naga Trinity Control/profiles.json` is the packaged Electron default. The Swift app currently
+sets the store dir to `~/Library/Application Support/NagaTrinityControl/` at launch (same as the Rust sibling AppStore).
+If the file is missing, offer to import the other path. Pretty-print with 2 spaces when writing.
+
+## Defaults (from `profileStore.ts`)
+
+- RGB: `static`, `#00ff66`, secondary `#00b3ff`, brightness 80, wave right, reactive 2, sync on, all zones enabled `#00ff66`.
+  (The Swift-side fallback/new profile uses secondary `#00d9ff`, as upstream's renderer does.)
+- DPI: active stage 2; stages 800, 1800, 3200, 6400, 12000 (x = y). Polling 1000. Side plate `twelve`.
+- Base buttons (ids `base-1..9`, hardwareIndex 1..9): Left Click/`Mouse 1`, Right Click/`Mouse 2`, Scroll Click/`Mouse 3`,
+  Scroll Up/`Wheel ↑`, Scroll Down/`Wheel ↓`, Wheel Tilt Left/`Browser ←`, Wheel Tilt Right/`Browser →` (all `default`),
+  DPI Up (`dpi-up`, `DPI +`), DPI Down (`dpi-down`, `DPI -`).
+- Side buttons `side-1..n`, hardwareIndex `10+i`, action `key`. Labels: twelve → `Numpad i`, value `i`;
+  two/seven → `Side i`, value `F{i}`.
+- Default macro "Potion + Confirm": key `1` → delay 120 → key `Enter`, once.
+
+## Migration (port `migrate` / `migrateButtons` / `createDefaultProfile` exactly)
+
+- Top-level JSON array → legacy profiles list; each is normalized through `createDefaultProfile`.
+- Object with `profiles` → normalize each. Empty list → initial store. Invalid `activeProfileId` → first profile.
+- Legacy DPI `{x, y}` without `stages` → a single stage.
+- Buttons: if `base-6.action == "dpi-up"` (pre wheel-tilt layout), rebuild base buttons and keep only `side-*`.
+  Otherwise merge by id onto the expected layout (unknown ids are dropped).
+- `write` always forces `version = 2` and merges settings over defaults.
+- `upsert` stamps `updatedAt = now`. `delete` of the last profile creates a default one. `duplicate` sets the copy active.

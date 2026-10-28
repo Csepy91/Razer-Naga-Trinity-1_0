@@ -1,0 +1,64 @@
+---
+description: macOS system integration - menu bar tray, login item, lock/sleep hooks, Accessibility, macro hotkeys and key injection
+globs: app/Sources/NagaTrinityControl/System/**,app/Sources/NagaTrinityControl/Macros/**,app/Sources/NagaTrinityControl/App/**,app/Resources/**
+alwaysApply: false
+---
+
+# macOS integration (port of `electron/main.ts` + `macroEngine.ts`)
+
+## Startup sequence (keep this order)
+
+1. Accessibility prompt: `AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt: true])`.
+2. Load settings (language, `rgbOffOnLock`), register power observers, create tray.
+3. Show the main window unless launched hidden (login item). If hidden, use activation policy `.accessory` (no Dock icon).
+4. `applyActiveProfile()`: full `applyProfile` of the active profile, then register hotkeys. This is the daemon pattern
+   that restores RGB, which the FW does not persist.
+
+## Window / Dock
+
+Closing the window hides it and switches to `.accessory`; it does not quit. "Open window" or a Dock click switches to `.regular`,
+then shows and focuses the window. Only the tray's Quit really quits, and quitting unregisters all hotkeys.
+
+## Tray (`NSStatusItem`, 16×16 template image of the upstream diamond icon, tooltip "Naga Trinity Control")
+
+Menu: Open window · Re-apply profile · ─ · ☑ Launch at macOS login · ☑ Turn RGB off when screen locks · ─ · Quit.
+Strings come from the upstream `TRAY_STRINGS` (DE/EN). Rebuild the menu when the language or settings change.
+
+## Login item
+
+Use `ServiceManagement`. Preferred: `SMAppService.agent(plistName:)` with a bundled LaunchAgent that starts the app with
+`--hidden`, which reproduces Electron's `openAsHidden`/`wasOpenedAsHidden` deterministically. Fallback: `SMAppService.mainApp`.
+Verify on hardware which one works, and document the result.
+
+## Lock / sleep
+
+- Lock: `DistributedNotificationCenter` `com.apple.screenIsLocked`. Sleep: `NSWorkspace.willSleepNotification`.
+  → if `rgbOffOnLock`: `setRgbOff()`.
+- Unlock: `com.apple.screenIsUnlocked`. Wake: `NSWorkspace.didWakeNotification`.
+  → **always** wait 600 ms, re-read the store, `previewRgb(active.rgb)`.
+
+## Macro engine ("Variante A", current parity target)
+
+- `HotkeyRegistry` + `DeviceKeyMonitor`: CGEventTap for F13–F20 + FPS Mouse 5/4. Separately,
+  `NagaHidKeyboardMonitor` **seizes** the Naga keyboard HID interface (VID/PID match) so 7/12-plate
+  factory digits are handled in-process without hijacking the Mac keyboard — required because
+  EEPROM remaps often only stick for slot 1 on Trinity. Visualizer/remapping `#N` = side ordinal.
+- `MacroExecutor`: replay with `CGEvent` posting (`.cghidEventTap`) instead of osascript (same semantics, no Automation prompt).
+  Cycles = `repeatCount` if mode `count` (min 1), else 1. Per step: `text` → type the string via
+  `keyboardSetUnicodeString`; `key` → special key code if named (Enter/Return 36, Tab 48, Space 49, Backspace 51,
+  Esc/Escape 53, ArrowLeft 123, ArrowRight 124, ArrowDown 125, ArrowUp 126), otherwise type the value as text;
+  `delay` → sleep `delayMs` and skip the post-delay; `mouse` → no-op. After non-delay steps, sleep `delayMs` if > 0.
+  Macros run on a background task and may overlap, as upstream does.
+- Known cross-talk (accepted): pressing F13–F20 on a physical keyboard also fires the macro.
+
+## Variante B (future, only when the user asks)
+
+A `CGEventTap` at `.cgSessionEventTap` for keyDown/keyUp, filtered by
+`kCGKeyboardEventSenderUSBVendorID/ProductID == 1532/0067`, swallowing matches (return `nil`). This enables per-device macros on any
+key, `while-held`/`toggle`, and F21–F24. It needs Accessibility (and possibly Input Monitoring).
+
+## Permissions and signing
+
+TCC grants are tied to the code signature. Bundle as `.app` with a stable bundle id `local.naga-trinity-control` and sign it
+(ad-hoc `codesign -s -` for dev). An ad-hoc re-sign can invalidate the Accessibility grant; tell the user to re-grant if hotkeys or
+injection stop working. Info.plist needs no USB entitlement (not sandboxed). Do not enable App Sandbox.

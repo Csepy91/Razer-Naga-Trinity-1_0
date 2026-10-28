@@ -1,0 +1,59 @@
+---
+description: Swift core conventions - protocol, IOKit USB, store, public API mirroring upstream IPC, errors, testing
+globs: app/Sources/NagaCore/**,app/Sources/NagaUSB/**,app/Sources/NagaCLI/**,app/Sources/NagaCoreSmoke/**
+alwaysApply: false
+---
+
+# Swift core (`NagaCore` + `NagaUSB`)
+
+## Modules
+
+- `NagaCore` (lib): `Protocol/` (pure encoders, CRC), `USB/Transport.swift` (`Transport` + `IOKitTransport`),
+  `Driver.swift` (apply sequences), `Models.swift`, `Store.swift`, `API.swift`. No UI types here.
+- `NagaUSB` (C): thin IOKit bridge (`naga_usb_open` / `naga_usb_set_report` / `naga_usb_list`). No protocol logic.
+- `NagaCLI` (bin): `naga-cli info|apply [--profile ID]|rgb <effect> [#hex]|dpi <x>|poll <hz>|off`.
+- `NagaCoreSmoke` (bin): golden-byte / migration / sequence checks (Command Line Tools have no XCTest).
+
+Ask before adding third-party SPM dependencies.
+
+## Public API (mirror upstream IPC one-to-one, all synchronous)
+
+```swift
+scanDevice() -> FfiDeviceInfo
+readStore() -> FfiProfileStore
+writeStore(store:) -> FfiProfileStore
+upsertProfile(profile:) / deleteProfile(id:) / duplicateProfile(id:) / setActiveProfile(id:) -> FfiProfileStore
+applyProfile(profile:) -> FfiApplyResult
+previewRgb(rgb:) -> FfiApplyResult
+setRgbOff() -> FfiApplyResult
+getSettings() -> FfiAppSettings / updateSettings(partial:) -> FfiAppSettings
+setStoreDir(path:)
+createEmptyProfile(name:) -> FfiNagaProfile
+```
+
+Type names keep the `Ffi*` prefix for drop-in parity with the previous UniFFI surface used by the SwiftUI app.
+
+- UI calls these via `CoreClient` on a background executor. Core functions block (USB sleeps use `Thread.sleep`).
+- Guard the cached interface and the store file with locks; calls may arrive from multiple threads.
+- No async/await inside `NagaCore`. Upstream's async is only the Node event loop.
+
+## Errors
+
+- Driver ops never throw to the app. They return `FfiApplyResult { ok, message, key, params, stage }` exactly like upstream:
+  `driverNotices.applyComplete`, `.applyCompleteWithMacros` (`macroCount`), `.rgbUpdated`, `.rgbOff`,
+  `.notFound`, `.usbError` (`detail`). `message` is the German fallback text from upstream.
+- Device missing → `key = driverNotices.notFound`.
+- Store read failure (missing or corrupt JSON) → return a fresh initial store. Never crash.
+
+## Style
+
+- Protocol constants live next to their encoder (`txDefault`, `ledClass`, …).
+- Encoders take validated domain values, clamp like upstream, and return a 90-byte `Report`.
+- Keep MIT attribution; no Razer Synapse code.
+
+## Tests
+
+- Golden-byte checks for every encoder and CRC via `swift run naga-core-smoke`.
+- Recorded-transport checks for apply sequences (`razer-protocol.mdc`).
+- Store migration checks: legacy array, pre-wheel-tilt, v2.
+- Hardware tests are manual via `naga-cli`.

@@ -1,0 +1,67 @@
+---
+description: Byte-exact Razer Naga Trinity USB protocol (reports, CRC, tx ids, RGB/DPI/polling/button commands, apply sequence)
+globs: app/Sources/NagaCore/Protocol/**,app/Sources/NagaCore/Driver.swift,app/Sources/NagaCore/USB/**
+alwaysApply: false
+---
+
+# Naga Trinity protocol (verified on hardware upstream: copy exactly)
+
+## Transport
+
+- IOKit **control transfers on endpoint 0** via `NagaUSB` (`DeviceRequest`). Do NOT use hidapi/IOHID
+  for vendor reports (macOS hides them behind protected keyboard-usage interfaces). Do NOT claim interfaces or detach kernel drivers.
+- SET_REPORT: `bmRequestType=0x21`, `bRequest=0x09`, `wValue=0x0300`, `wIndex=<iface>`, 90-byte payload, timeout ~1000 ms.
+- Interface for general commands (RGB/DPI/polling): try `0x02`; if the transfer errors, try `0x00`. Cache the one that worked
+  for the process lifetime (FW ACKs on `0x00` but ignores, so `0x02` must be first).
+- **Button-binding writes always use `wIndex=0x00`** (bypass the cache).
+- Open the device per operation (`apply`, `rgb_only`, `rgb_off`) and close it afterwards, even on error.
+- `status=OK` responses prove nothing: FW ACKs commands it ignores. Never "verify" by status alone.
+
+## Report layout (90 bytes, zero-filled)
+
+```
+[0]=0x00 status  [1]=tx_id  [2..4]=0x00  [5]=data_size  [6]=class  [7]=command
+[8..87]=args     [88]=CRC = XOR of bytes 2..=87         [89]=0x00
+```
+
+tx_id: `0x3f` default (brightness, generic effects, DPI, polling). `0x1f` for Trinity static and **all button-binding writes**.
+
+## Commands (args start at byte 8)
+
+| Purpose | cls | cmd | size | tx | args |
+|---|---|---|---|---|---|
+| Brightness (global) | 0x0f | 0x04 | 0x03 | 3f | `01 00 round(b%*255)` |
+| Effect off / spectrum | 0x0f | 0x02 | 0x03 | 3f | `01 LED 00` / `01 LED 03` |
+| Wave | 0x0f | 0x02 | 0x06 | 3f | `01 LED 04 dir` (right=`01`, left=`02`) |
+| Reactive | 0x0f | 0x02 | 0x07 | 3f | `01 LED 05 speed(1..4) R G B` |
+| Trinity static step 1 | 0x0f | 0x02 | 0x06 | 1f | `00 00 08` |
+| Trinity static step 2 | 0x0f | 0x03 | 0x0e | 1f | `00 00 00 00 02` + RGB×3 (same color) |
+| DPI stages | 0x04 | 0x06 | 2+n×7 | 3f | `00 active n` then per stage `idx xHi xLo yHi yLo 00 00` |
+| DPI active (x/y) | 0x04 | 0x05 | 0x07 | 3f | `01 xHi xLo yHi yLo 00 00` |
+| Polling rate | 0x00 | 0x05 | 0x01 | 3f | 125Hz=`08`, 500=`02`, 1000=`01` |
+| Side button bind | 0x02 | 0x0c | 0x0a | 1f | `slot 40+(i-1) 00 02 02 mods HID` (mods = USB HID modifier mask) |
+| Wheel tilt bind | 0x02 | 0x0c | 0x0a | 1f | `slot src 00 01 01 action` (src `34`→`04` Back, `35`→`05` Forward) |
+
+LED ids: scroll `0x01`, logo `0x04`, `side`/underglow → `0x00` broadcast. `0x05` FAILs; `0x0a` is a phantom.
+DPI: max 5 stages, clamp x/y to 100..=16000, active clamped to 1..=n. Upstream's `2+n×7` size is kept as-is.
+Don't "fix" it without a hardware test.
+
+## Sequences and delays
+
+- **RGB**: brightness → wait 20 ms. If effect is `static`/`breathing`: Trinity step 1 → wait 30 ms → step 2 with master color, done.
+  Else if `zones.side.enabled`: apply effect on LED `0x00` only. Else for `logo` then `scroll`: disabled → effect off + 20 ms;
+  enabled → apply effect + 20 ms. Zone color = master color if `syncZones`, else zone color. Invalid hex → `#00ff66`.
+- **Side bindings**: for slot `0x02` then `0x01` (order is mandatory: slot 1 alone is silently dropped), buttons 1..=12, ~40 ms apart.
+  Seven/twelve plates: always write Razer defaults `1e…2e` (Swift IOHID remaps; F13–F24 EEPROM is
+  unreliable past slot 1 and F14/F15 hit macOS brightness). FPS plate: side-1/2 → slots 12/9 as F13/F14.
+  `parseKeyBinding` remains for tooling; byte 13 is the USB modifier mask (0 for these paths).
+- **Wheel tilt**: for slot `0x02` then `0x01`: write `0x34`/`04`, 20 ms, `0x35`/`05`, 20 ms.
+- **Full apply** order: RGB → DPI stages (20 ms) → DPI active (20 ms) → polling → side bindings → wheel tilt.
+  The settle after DPI active is required: without it the Trinity FW ACKs the polling SET_REPORT but ignores it
+  (verified on hardware; upstream Electron often worked only because Node's async usb stack inserted latency).
+- **RGB off** (lock/sleep): brightness 0 only.
+
+## Testing
+
+Each encoder is a pure function returning `[UInt8]` (90 bytes) in `Protocol/`, checked by `naga-core-smoke`.
+Sequences go through a `Transport` protocol so tests can record and assert the exact frame list plus delays without hardware.

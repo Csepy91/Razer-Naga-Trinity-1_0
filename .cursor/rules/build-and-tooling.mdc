@@ -1,0 +1,38 @@
+---
+description: Toolchain status, SwiftPM build pipeline, .app bundle scripts and verification steps
+globs: scripts/**,app/Package.swift
+alwaysApply: false
+---
+
+# Build and tooling
+
+## Toolchain status
+
+- Swift via **Command Line Tools only** (`/Library/Developer/CommandLineTools`). There is no Xcode, so no `xcodebuild`, no
+  `-create-xcframework`, and no `.xcodeproj`/asset catalogs/`.xcstrings`. Everything builds with `swift build` and shell scripts.
+- **No Rust / Cargo / UniFFI.** The core is pure Swift (+ thin C IOKit bridge). Do not add a Rust toolchain dependency.
+- Homebrew is available, but builds must not depend on brew libraries.
+- XCTest is unavailable without Xcode — use `naga-core-smoke` for golden checks.
+
+## Pipeline
+
+1. `cd app && swift build` — builds `NagaUSB`, `NagaCore`, `NagaCLI`, `NagaTrinityControl`.
+2. `swift run` / `swift run naga-cli …` for quick iteration.
+3. `scripts/bundle-app.sh`: `swift build -c release --arch arm64` → assemble `build/Naga Trinity Control.app`
+   (`Contents/MacOS`, `Contents/Resources` with the SwiftPM resource bundle, `Info.plist` with `CFBundleIdentifier=local.naga-trinity-control`,
+   `LSMinimumSystemVersion=13.0`, `NSHumanReadableCopyright`, LaunchAgent plist in `Contents/Library/LaunchAgents/`)
+   → `codesign --force --deep -s - "<app>"`.
+
+The app must run from the `.app` bundle (TCC, login items and `Bundle.main` resources depend on it). `swift run` is only for
+quick UI iteration without hotkeys or a login item.
+
+## Verification checklist (no automated hardware CI)
+
+- `./scripts/test-core.sh` (golden bytes + migration + apply settle).
+- `swift build` with zero errors.
+- With the mouse plugged in: `naga-cli info` → `naga-cli rgb static #ff0000` → `naga-cli apply` → app "Send to mouse",
+  lock/unlock, sleep/wake, macro on side button 1. Report the results to the user; never claim hardware behavior you didn't observe.
+
+## Repo hygiene
+
+Gitignore `app/.build/`, `build/`, `.upstream/`, `*.xcuserstate`, `.DS_Store`.

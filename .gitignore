@@ -1,0 +1,27 @@
+# Upstream reference (read-only)
+.upstream/
+
+# Swift / SwiftPM
+app/.build/
+.build/
+*.swiftmodule
+*.swiftdoc
+*.swiftsourceinfo
+
+# App bundle output
+build/
+
+# Xcode leftovers (should not exist, but just in case)
+*.xcodeproj/
+*.xcworkspace/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace

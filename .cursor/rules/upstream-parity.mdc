@@ -1,0 +1,59 @@
+---
+description: How to use the upstream Electron repo as source of truth, the file mapping, and known discrepancies in its CLAUDE.md
+alwaysApply: true
+---
+
+# Upstream parity
+
+## Getting the reference
+
+```bash
+git clone https://github.com/cepheiden/Razer-Naga-Trinity-MACOS.git .upstream && git -C .upstream checkout 28c00cf
+```
+
+`.upstream/` is read-only reference material and must be gitignored. Never copy TS/JS into the build.
+If a behavior question arises, read the upstream **code** first. Its `CLAUDE.md` is partly stale (see below).
+
+## File mapping
+
+| Upstream | Port (this Swift tree) |
+|---|---|
+| `electron/nagaDriver.ts` | `app/Sources/NagaCore/Protocol/*` + `USB/Transport.swift` + `Driver.swift` |
+| `electron/types.ts` | `app/Sources/NagaCore/Models.swift` |
+| `electron/profileStore.ts` | `app/Sources/NagaCore/Store.swift` |
+| `electron/main.ts` IPC handlers | `app/Sources/NagaCore/API.swift` |
+| `electron/main.ts` tray/power/login | `app/.../System/` (`TrayController`, `PowerMonitor`, `LoginItem`) |
+| `electron/macroEngine.ts` | `app/.../Macros/` (`HotkeyRegistry`, `MacroExecutor`) |
+| `src/store/useNagaStore.ts` | `app/.../State/AppStore.swift` |
+| `src/components/*.tsx` | `app/.../Views/*View.swift` |
+| `src/lib/constants.ts` | `app/.../State/Constants.swift` |
+| `src/i18n/*.json` | `app/.../Resources/i18n/*.json` (verbatim copy) |
+| `src/index.css` + `App.css` | `app/.../Theme/Theme.swift` |
+
+## Upstream CLAUDE.md is stale here: trust the code
+
+- "Button-binding writes don't work": **outdated**. Writes work (cls `0x02` cmd `0x0c`, see `razer-protocol.mdc`).
+- The macro engine description (`readSideKeymap`, `HID_TO_ACCELERATOR`, returns `{registered, skippedUnsafe, noKeymap}`) is **outdated**.
+  The real code registers a fixed F13–F24 table and returns `{ registered, failed }`.
+- "DPI verified via round-trip read": the current code never issues `GET_REPORT`. All writes are fire-and-forget.
+
+## Quirks to preserve (unless the user explicitly asks to change them)
+
+- Hard-coded German defaults: `"Raid / Produktiv"` (initial profile), `"Standardprofil"`, `"Profil N"`,
+  `"Makro N"`, `"<name> – Kopie"` (en dash), default macro `"Potion + Confirm"`.
+- Create-profile uses the renderer fallback profile (no macros). The initial store profile has the default macro.
+- Selecting another profile reloads from disk, which **discards unsaved edits**. Delete has no confirmation.
+- Changing the side plate rebuilds **all** button bindings (base + side) to defaults.
+- Hardware side buttons: `macro` **and** non-empty `key` → F13+n; Swift injects the macro / keystroke
+  (incl. unicode like `É`). Direct letter HID EEPROM writes do not take effect on Trinity FW (tested).
+  FPS 2-button plate is hard-wired to slots **12 (top / side-1)** and **9 (bottom / side-2)** — verified
+  working for keystrokes and macros (2026-10-27). `mouse-button`, `disabled`, `dpi-*`, `profile-cycle`,
+  and all base-button bindings stay UI/data only. Wheel tilt always gets Browser Back/Forward.
+- `secondaryColor` is stored and editable (breathing) but never sent; breathing is sent as static.
+- `while-held` / `toggle` repeat modes are selectable but behave like `once`. `mouse` macro steps only apply their delay.
+
+## Known upstream limitation to verify on hardware
+
+macOS has **no virtual key codes for F21–F24** (`kVK_F20` is the last), so macros on side buttons 9–12
+(HID `0x70`–`0x73`) likely never fire upstream. Keep the F13–F24 mapping for parity, but surface failed
+registrations in the UI. The proper fix is "Variante B" (`macos-integration.mdc`). Ask before implementing it.

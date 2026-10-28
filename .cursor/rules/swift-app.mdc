@@ -1,0 +1,53 @@
+---
+description: SwiftUI app architecture, state store semantics, screens, theme tokens and Swift style for the macOS app
+globs: app/Sources/NagaTrinityControl/**/*.swift
+alwaysApply: false
+---
+
+# Swift app (`NagaTrinityControl`)
+
+SwiftPM executable target `NagaTrinityControl`, Swift 6 language mode, macOS 13+. SwiftUI for views; AppKit
+(`NSApplicationDelegate`, `NSStatusItem`, `NSWindow`) where SwiftUI can't express upstream behavior.
+
+## Structure
+
+```
+App/        NagaTrinityControlApp.swift, AppDelegate.swift (lifecycle, window, activation policy)
+State/      AppStore.swift (port of useNagaStore), Constants.swift, CoreClient.swift (async wrapper over NagaCore)
+Views/      SidebarView, TopbarView, NoticeBarView, LightingPanelView, PerformancePanelView,
+            ButtonsPanelView, MacrosPanelView, MouseVisualizerView, Components/
+Macros/     HotkeyRegistry.swift, MacroExecutor.swift, DeviceKeyMonitor, NagaHidKeyboardMonitor
+System/     TrayController.swift, PowerMonitor.swift, LoginItem.swift, Accessibility.swift
+Theme/      Theme.swift (colors, radii, fonts)
+I18n/       L10n.swift
+```
+
+## State (`AppStore`: `@MainActor final class AppStore: ObservableObject`)
+
+Mirror `useNagaStore.ts` exactly: `store`, `device`, `section` (lighting|performance|buttons|macros), `notice`,
+`isApplying`, `hasUnsavedChanges`. Edits mutate the in-memory active profile and set dirty. Nothing is persisted until
+**Save** (`upsertProfile`) or **Send to mouse** (`applyProfile` → on ok: upsert, set active, re-register hotkeys,
+clear dirty; on failure keep dirty) → then rescan. Every RGB change triggers a **240 ms debounced** `previewRgb`.
+`CoreClient` runs `NagaCore` calls off the main actor: `try await Task.detached { applyProfile(profile: p) }.value`.
+
+## Window and layout (match the upstream screenshot)
+
+- Window 1280×860, min 1080×720, title "Naga Trinity Control", hidden-inset titlebar, background `#0a0c0a`.
+- Sidebar: brand, device card (Connected/Not found pill, "VID:PID 1532:0067 · n HID interfaces", Rescan), profile list
+  (+ button, name, "DPI · Hz", color swatch), footer (active-stage DPI, DE/EN switch, trademark note).
+- Topbar: editable profile name + dirty dot, Duplicate, Delete, Save, primary "Send to mouse" (spinner while applying), tab bar.
+- Panels: same controls, ranges and visibility rules as the matching upstream `.tsx`. `MouseVisualizerView` redraws the
+  upstream SVG with `Canvas`/`Path` in a 260×360 space.
+
+## Theme tokens (from `src/index.css`)
+
+bg0 `#050605`, bg1 `#0a0c0a`, text0 `#eff5ec`, text1 `#c4cec5`, text2 `#8d978e`, text3 `#5d655d`,
+accent `#00ff66` (soft 16%, glow 38%), danger `#ff5470`, warn `#ffb84d`, info `#4dd0ff`,
+surface `rgba(20,24,20,.78)`, border `white 8%` (strong 14%), radii 6/10/14/20.
+Use SF Symbols in place of lucide icons. Force dark appearance.
+
+## Style
+
+- Swift 6 strict concurrency. UI types are `@MainActor`. No force unwraps outside tests. No `print`; use `os.Logger(subsystem: "local.naga-trinity-control")`.
+- Every user-visible string goes through `L10n.t("key")` (see `i18n.mdc`). No hard-coded UI text except brand and VID:PID.
+- `NagaCore` is first-party Swift — edit freely; keep the public `Ffi*` API stable for the UI.

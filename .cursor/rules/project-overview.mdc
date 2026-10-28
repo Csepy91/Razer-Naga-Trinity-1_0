@@ -1,0 +1,61 @@
+---
+description: Project mission, pure Swift architecture, repo layout and golden rules for the Razer Naga Trinity macOS controller
+alwaysApply: true
+---
+
+# Naga Trinity Control (Swift + SwiftUI)
+
+Native macOS replacement for Razer Synapse for the **Razer Naga Trinity (VID `0x1532`, PID `0x0067`)**:
+RGB (scroll + logo), DPI stages, polling rate, side-button remapping (EEPROM), multi-step macros,
+RGB-off on lock/sleep, menu-bar daemon with launch-at-login, bilingual UI (DE / EN).
+
+## Source of truth
+
+This is a **1:1 port** of the Electron app [cepheiden/Razer-Naga-Trinity-MACOS](https://github.com/cepheiden/Razer-Naga-Trinity-MACOS),
+pinned at commit `28c00cf`, reimplemented entirely in Swift (no Rust). Behavior, protocol bytes, JSON format,
+defaults and UI strings come from upstream. See `upstream-parity.mdc`. Do not invent features, and do not
+"improve" protocol bytes without a hardware test.
+
+A sibling Rust+Swift tree may exist nearby for reference; **do not modify it from this project**. All work stays
+in this folder.
+
+## Language split (non-negotiable: Swift only)
+
+| Layer | Language | Owns |
+|---|---|---|
+| `app/Sources/NagaCore` | Swift | Razer protocol encoding, USB transport (IOKit via `NagaUSB`), data model, `profiles.json` persistence + migration, public API |
+| `app/Sources/NagaUSB` | C (thin) | IOKit USB device open + SET_REPORT control transfers only — no protocol logic |
+| `app/Sources/NagaCLI` | Swift | Hardware smoke-test CLI |
+| `app/Sources/NagaTrinityControl` | Swift (SwiftUI + AppKit) | All UI, tray, login item, lock/sleep hooks, Accessibility, macro engine, i18n |
+
+The Electron IPC API (`window.naga.*`) maps to `NagaCore` free functions one-to-one (see `swift-core.mdc`).
+No JavaScript/TypeScript, no Electron, no web views, no Node, no Rust/Cargo/UniFFI.
+
+## Target layout
+
+```
+app/                  SwiftPM package (no .xcodeproj)
+  Package.swift
+  Sources/NagaUSB/          C IOKit bridge (headers in include/)
+  Sources/NagaCore/         protocol/, USB/, Store, Driver, API, Models
+  Sources/NagaCLI/          naga-cli executable
+  Sources/NagaTrinityControl/  the app
+  Tests/NagaCoreTests/      golden bytes + migration + sequences
+  Resources/                i18n, Info.plist, LaunchAgent plist
+scripts/              bundle-app.sh, test-core.sh
+```
+
+## Environment facts
+
+- Apple Silicon, macOS 13+, Swift from **Command Line Tools only**: no Xcode, so no `xcodebuild` and no `.xcodeproj`.
+  Build with `swift build`.
+- Minimum deployment target: macOS 13 (same as upstream).
+
+## Golden rules
+
+1. Byte-exact protocol parity with upstream `electron/nagaDriver.ts`. Every encoder gets a golden-bytes unit test.
+2. The `profiles.json` schema stays identical (camelCase, `version: 2`), so upstream files load unchanged.
+3. i18n keys and strings are copied verbatim from upstream `src/i18n/{en,de}.json`.
+4. Driver ops never throw across the app API; errors become `FfiApplyResult { ok: false, key, params }`.
+5. USB I/O is blocking: never call it on the main thread from the UI (use `CoreClient` / `Task.detached`).
+6. Keep MIT attribution to the upstream author, and the Razer trademark disclaimer in the UI and README.

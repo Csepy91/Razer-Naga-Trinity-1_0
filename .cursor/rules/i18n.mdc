@@ -1,0 +1,26 @@
+---
+description: Bilingual DE/EN localization - upstream JSON reused verbatim, runtime language switch, driver notice translation
+globs: app/Sources/NagaTrinityControl/I18n/**,app/Sources/NagaTrinityControl/Resources/i18n/**,app/Resources/i18n/**,app/Sources/NagaTrinityControl/Views/**
+alwaysApply: false
+---
+
+# i18n (DE / EN)
+
+- `Resources/i18n/en.json` and `de.json` are **verbatim copies** of upstream `src/i18n/*.json` (the same nested keys).
+  Add new keys to both files in the same change. Don't use `.strings`/`.xcstrings`: upstream switches language at
+  runtime without a restart, and `.xcstrings` compilation needs Xcode.
+- `L10n` (`@MainActor ObservableObject`) loads both files, flattens them to dotted keys, and exposes
+  `t(_ key: String, _ params: [String: String] = [:]) -> String` with `{{name}}` interpolation.
+  Missing key → fall back to English, then to the key itself. Views observe `L10n` so a switch re-renders immediately.
+- Language resolution: `settings.language` if set, else the system locale starts with `de` → `de`, else `en`.
+  The sidebar DE/EN buttons set the language and call `updateSettings({ language })`, then the tray menu is rebuilt.
+- The tray uses the upstream `TRAY_STRINGS` table. Put it under a `tray.*` key in both JSON files, not a separate Swift table.
+- Driver results: show `L10n.t(result.key, result.params)` when the key exists, else `result.message`.
+- Base-button labels: `buttons.labels.<id>` if present, else the stored `label` (custom names).
+- Dynamic lookups follow upstream key shapes: `effects.<id>.label|description`, `zones.<id>.label|description`,
+  `sidePlates.<id>.label|subtitle`, `actions.<id>`, `macros.repeatModes.<id>`, `macros.stepTypes.<id>`, `sections.<id>`.
+
+```swift
+// ❌ Text("Send to mouse")
+// ✅ Text(l10n.t("topbar.applyToMouse"))
+```
